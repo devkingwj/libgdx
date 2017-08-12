@@ -45,7 +45,9 @@ public class TextureAtlasLoader extends SynchronousAssetLoader<TextureAtlas, Tex
 			page.texture = texture;
 		}
 
-		return new TextureAtlas(data);
+	 	TextureAtlas atlas = new TextureAtlas(data);
+ 		data = null;
+ 		return atlas;
 	}
 
 	@Override
@@ -58,7 +60,7 @@ public class TextureAtlasLoader extends SynchronousAssetLoader<TextureAtlas, Tex
 			data = new TextureAtlasData(atlasFile, imgDir, false);
 		}
 
-		Array<AssetDescriptor> dependencies = new Array<AssetDescriptor>();
+		Array<AssetDescriptor> dependencies = new Array();
 		for (Page page : data.getPages()) {
 			TextureParameter params = new TextureParameter();
 			params.format = page.format;

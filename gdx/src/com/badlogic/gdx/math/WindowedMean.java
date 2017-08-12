@@ -36,12 +36,12 @@ public final class WindowedMean {
 		values = new float[window_size];
 	}
 
-	/** @return whether the value returned will be meaningfull */
+	/** @return whether the value returned will be meaningful */
 	public boolean hasEnoughData () {
 		return added_values >= values.length;
 	}
 
-	/** clears this WindowedMean. The class will only return meaningfull values after enough data has been added again. */
+	/** clears this WindowedMean. The class will only return meaningful values after enough data has been added again. */
 	public void clear () {
 		added_values = 0;
 		last_value = 0;
@@ -50,17 +50,18 @@ public final class WindowedMean {
 		dirty = true;
 	}
 
-	/** adds a new sample to this mean. in case the window is full the oldest value will be replaced by this new value.
+	/** adds a new sample to this mean. In case the window is full the oldest value will be replaced by this new value.
 	 * 
 	 * @param value The value to add */
 	public void addValue (float value) {
-		added_values++;
+		if (added_values < values.length)
+			added_values++;
 		values[last_value++] = value;
 		if (last_value > values.length - 1) last_value = 0;
 		dirty = true;
 	}
 
-	/** returns the mean of the samples added to this instance. only returns meaningfull results when at least window_size samples
+	/** returns the mean of the samples added to this instance. Only returns meaningful results when at least window_size samples
 	 * as specified in the constructor have been added.
 	 * @return the mean */
 	public float getMean () {
@@ -80,7 +81,7 @@ public final class WindowedMean {
 
 	/** @return the oldest value in the window */
 	public float getOldest () {
-		return last_value == values.length - 1 ? values[0] : values[last_value + 1];
+		return added_values < values.length ? values[0] : values[last_value];
 	}
 
 	/** @return the value last added */
@@ -99,5 +100,23 @@ public final class WindowedMean {
 		}
 
 		return (float)Math.sqrt(sum / values.length);
+	}
+	
+	public int getWindowSize () {
+		return values.length;
+	}
+
+	/** @return A new <code>float[]</code> containing all values currently in the window of the stream, in order from oldest to
+	 *         latest. The length of the array is smaller than the window size if not enough data has been added. */
+	public float[] getWindowValues () {
+		float[] windowValues = new float[added_values];
+		if (hasEnoughData()) {
+			for (int i = 0; i < windowValues.length; i++) {
+				windowValues[i] = values[(i + last_value) % values.length];
+			}
+		} else {
+			System.arraycopy(values, 0, windowValues, 0, added_values);
+		}
+		return windowValues;
 	}
 }

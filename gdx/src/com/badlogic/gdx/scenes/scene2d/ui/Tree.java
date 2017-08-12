@@ -16,10 +16,8 @@
 
 package com.badlogic.gdx.scenes.scene2d.ui;
 
-import com.badlogic.gdx.Gdx;
-import com.badlogic.gdx.Input.Keys;
 import com.badlogic.gdx.graphics.Color;
-import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.graphics.g2d.Batch;
 import com.badlogic.gdx.scenes.scene2d.Actor;
 import com.badlogic.gdx.scenes.scene2d.Group;
 import com.badlogic.gdx.scenes.scene2d.InputEvent;
@@ -27,8 +25,9 @@ import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener.ChangeEvent;
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 import com.badlogic.gdx.scenes.scene2d.utils.Drawable;
 import com.badlogic.gdx.scenes.scene2d.utils.Layout;
+import com.badlogic.gdx.scenes.scene2d.utils.Selection;
+import com.badlogic.gdx.scenes.scene2d.utils.UIUtils;
 import com.badlogic.gdx.utils.Array;
-import com.badlogic.gdx.utils.Pools;
 
 /** A tree widget where each node has an icon, actor, and child nodes.
  * <p>
@@ -37,18 +36,14 @@ import com.badlogic.gdx.utils.Pools;
  * {@link ChangeEvent} is fired when the selected node changes.
  * @author Nathan Sweet */
 public class Tree extends WidgetGroup {
-	static boolean isMac = System.getProperty("os.name").contains("Mac");
-
 	TreeStyle style;
 	final Array<Node> rootNodes = new Array();
-	final Array<Node> selectedNodes = new Array();
+	final Selection<Node> selection;
 	float ySpacing = 4, iconSpacingLeft = 2, iconSpacingRight = 2, padding = 0, indentSpacing;
 	private float leftColumnWidth, prefWidth, prefHeight;
 	private boolean sizeInvalid = true;
-	boolean multiSelect = true;
-	boolean toggleSelect = true;
 	private Node foundNode;
-	Node overNode;
+	Node overNode, rangeStart;
 	private ClickListener clickListener;
 
 	public Tree (Skin skin) {
@@ -60,58 +55,59 @@ public class Tree extends WidgetGroup {
 	}
 
 	public Tree (TreeStyle style) {
+		selection = new Selection<Node>() {
+			protected void changed () {
+				switch (size()) {
+				case 0:
+					rangeStart = null;
+					break;
+				case 1:
+					rangeStart = first();
+					break;
+				}
+			}
+		};
+		selection.setActor(this);
+		selection.setMultiple(true);
 		setStyle(style);
 		initialize();
 	}
 
 	private void initialize () {
 		addListener(clickListener = new ClickListener() {
-			private boolean isCtrlPressed () {
-				if (isMac)
-					return Gdx.input.isKeyPressed(Keys.SYM);
-				else
-					return Gdx.input.isKeyPressed(Keys.CONTROL_LEFT) || Gdx.input.isKeyPressed(Keys.CONTROL_RIGHT);
-			}
-
 			public void clicked (InputEvent event, float x, float y) {
 				Node node = getNodeAt(y);
 				if (node == null) return;
 				if (node != getNodeAt(getTouchDownY())) return;
-				if (multiSelect && selectedNodes.size > 0
-					&& (Gdx.input.isKeyPressed(Keys.SHIFT_LEFT) || Gdx.input.isKeyPressed(Keys.SHIFT_RIGHT))) {
-					// Select range (shift/ctrl).
-					float low = selectedNodes.first().actor.getY();
-					float high = node.actor.getY();
-					if (!isCtrlPressed()) selectedNodes.clear();
-					if (low > high)
-						selectNodes(rootNodes, high, low);
-					else
-						selectNodes(rootNodes, low, high);
-					fireChangeEvent();
+				if (selection.getMultiple() && selection.hasItems() && UIUtils.shift()) {
+					// Select range (shift).
+					if (rangeStart == null) rangeStart = node;
+					Node rangeStart = Tree.this.rangeStart;
+					if (!UIUtils.ctrl()) selection.clear();
+					float start = rangeStart.actor.getY(), end = node.actor.getY();
+					if (start > end)
+						selectNodes(rootNodes, end, start);
+					else {
+						selectNodes(rootNodes, start, end);
+						selection.items().orderedItems().reverse();
+					}
+
+					selection.fireChangeEvent();
+					Tree.this.rangeStart = rangeStart;
 					return;
 				}
-				if (!multiSelect || !isCtrlPressed()) {
-					if (node.children.size > 0) {
-						// Toggle expanded.
-						float rowX = node.actor.getX();
-						if (node.icon != null) rowX -= iconSpacingRight + node.icon.getMinWidth();
-						if (x < rowX) {
-							node.setExpanded(!node.expanded);
-							return;
-						}
-					}
-					if (!node.isSelectable()) return;
-					boolean unselect = toggleSelect && selectedNodes.size == 1 && selectedNodes.contains(node, true);
-					selectedNodes.clear();
-					if (unselect) {
-						fireChangeEvent();
+				if (node.children.size > 0 && (!selection.getMultiple() || !UIUtils.ctrl())) {
+					// Toggle expanded.
+					float rowX = node.actor.getX();
+					if (node.icon != null) rowX -= iconSpacingRight + node.icon.getMinWidth();
+					if (x < rowX) {
+						node.setExpanded(!node.expanded);
 						return;
 					}
-				} else if (!node.isSelectable()) //
-					return;
-				// Select single (ctrl).
-				if (!selectedNodes.removeValue(node, true)) selectedNodes.add(node);
-				fireChangeEvent();
+				}
+				if (!node.isSelectable()) return;
+				selection.choose(node);
+				if (!selection.isEmpty()) rangeStart = node;
 			}
 
 			public boolean mouseMoved (InputEvent event, float x, float y) {
@@ -156,16 +152,9 @@ public class Tree extends WidgetGroup {
 	/** Removes all tree nodes. */
 	public void clearChildren () {
 		super.clearChildren();
-		rootNodes.clear();
-		selectedNodes.clear();
 		setOverNode(null);
-		fireChangeEvent();
-	}
-
-	void fireChangeEvent () {
-		ChangeEvent changeEvent = Pools.obtain(ChangeEvent.class);
-		fire(changeEvent);
-		Pools.free(changeEvent);
+		rootNodes.clear();
+		selection.clear();
 	}
 
 	public Array<Node> getNodes () {
@@ -222,13 +211,11 @@ public class Tree extends WidgetGroup {
 
 	private float layout (Array<Node> nodes, float indent, float y) {
 		float ySpacing = this.ySpacing;
-		Drawable plus = style.plus, minus = style.minus;
 		for (int i = 0, n = nodes.size; i < n; i++) {
 			Node node = nodes.get(i);
-			Actor actor = node.actor;
 			float x = indent;
 			if (node.icon != null) x += node.icon.getMinWidth();
-			y -= node.height;
+			y -= node.getHeight();
 			node.actor.setPosition(x, y);
 			y -= ySpacing;
 			if (node.expanded) y = layout(node.children, indent + indentSpacing, y);
@@ -236,26 +223,32 @@ public class Tree extends WidgetGroup {
 		return y;
 	}
 
-	public void draw (SpriteBatch batch, float parentAlpha) {
+	public void draw (Batch batch, float parentAlpha) {
+		drawBackground(batch, parentAlpha);
 		Color color = getColor();
-		if (style.background != null) {
-			batch.setColor(color.r, color.g, color.b, color.a * parentAlpha);
-			style.background.draw(batch, getX(), getY(), getWidth(), getHeight());
-			batch.setColor(Color.WHITE);
-		}
+		batch.setColor(color.r, color.g, color.b, color.a * parentAlpha);
 		draw(batch, rootNodes, leftColumnWidth);
 		super.draw(batch, parentAlpha); // Draw actors.
 	}
 
+	/** Called to draw the background. Default implementation draws the style background drawable. */
+	protected void drawBackground (Batch batch, float parentAlpha) {
+		if (style.background != null) {
+			Color color = getColor();
+			batch.setColor(color.r, color.g, color.b, color.a * parentAlpha);
+			style.background.draw(batch, getX(), getY(), getWidth(), getHeight());
+		}
+	}
+
 	/** Draws selection, icons, and expand icons. */
-	private void draw (SpriteBatch batch, Array<Node> nodes, float indent) {
+	private void draw (Batch batch, Array<Node> nodes, float indent) {
 		Drawable plus = style.plus, minus = style.minus;
 		float x = getX(), y = getY();
 		for (int i = 0, n = nodes.size; i < n; i++) {
 			Node node = nodes.get(i);
 			Actor actor = node.actor;
 
-			if (selectedNodes.contains(node, true) && style.selection != null) {
+			if (selection.contains(node) && style.selection != null) {
 				style.selection.draw(batch, x, y + actor.getY() - ySpacing / 2, getWidth(), node.height + ySpacing);
 			} else if (node == overNode && style.over != null) {
 				style.over.draw(batch, x, y + actor.getY() - ySpacing / 2, getWidth(), node.height + ySpacing);
@@ -288,11 +281,13 @@ public class Tree extends WidgetGroup {
 	private float getNodeAt (Array<Node> nodes, float y, float rowY) {
 		for (int i = 0, n = nodes.size; i < n; i++) {
 			Node node = nodes.get(i);
-			if (y >= rowY - node.height - ySpacing && y < rowY) {
+			float height = node.height;
+			rowY -= node.getHeight() - height; // Node subclass may increase getHeight.
+			if (y >= rowY - height - ySpacing && y < rowY) {
 				foundNode = node;
 				return -1;
 			}
-			rowY -= node.height + ySpacing;
+			rowY -= height + ySpacing;
 			if (node.expanded) {
 				rowY = getNodeAt(node.children, y, rowY);
 				if (rowY == -1) return -1;
@@ -302,41 +297,17 @@ public class Tree extends WidgetGroup {
 	}
 
 	void selectNodes (Array<Node> nodes, float low, float high) {
-		float ySpacing = this.ySpacing;
 		for (int i = 0, n = nodes.size; i < n; i++) {
 			Node node = nodes.get(i);
 			if (node.actor.getY() < low) break;
 			if (!node.isSelectable()) continue;
-			if (node.actor.getY() <= high) selectedNodes.add(node);
+			if (node.actor.getY() <= high) selection.add(node);
 			if (node.expanded) selectNodes(node.children, low, high);
 		}
 	}
 
-	public Array<Node> getSelection () {
-		return selectedNodes;
-	}
-
-	public void setSelection (Node node) {
-		selectedNodes.clear();
-		if (node != null) selectedNodes.add(node);
-		fireChangeEvent();
-	}
-
-	public void setSelection (Array<Node> nodes) {
-		selectedNodes.clear();
-		selectedNodes.addAll(nodes);
-		fireChangeEvent();
-	}
-
-	public void addSelection (Node node) {
-		if (node == null) return;
-		selectedNodes.add(node);
-		fireChangeEvent();
-	}
-
-	public void clearSelection () {
-		selectedNodes.clear();
-		fireChangeEvent();
+	public Selection<Node> getSelection () {
+		return selection;
 	}
 
 	public TreeStyle getStyle () {
@@ -347,10 +318,18 @@ public class Tree extends WidgetGroup {
 		return rootNodes;
 	}
 
+	/** @return May be null. */
 	public Node getOverNode () {
 		return overNode;
 	}
 
+	/** @return May be null. */
+	public Object getOverObject () {
+		if (overNode == null) return null;
+		return overNode.getObject();
+	}
+
+	/** @param overNode May be null. */
 	public void setOverNode (Node overNode) {
 		this.overNode = overNode;
 	}
@@ -360,9 +339,18 @@ public class Tree extends WidgetGroup {
 		this.padding = padding;
 	}
 
+	/** Returns the amount of horizontal space for indentation level. */
+	public float getIndentSpacing () {
+		return indentSpacing;
+	}
+
 	/** Sets the amount of vertical space between nodes. */
 	public void setYSpacing (float ySpacing) {
 		this.ySpacing = ySpacing;
+	}
+
+	public float getYSpacing () {
+		return ySpacing;
 	}
 
 	/** Sets the amount of horizontal space between the node actors and icons. */
@@ -449,16 +437,8 @@ public class Tree extends WidgetGroup {
 		return clickListener;
 	}
 
-	public void setMultiSelect (boolean multiSelect) {
-		this.multiSelect = multiSelect;
-	}
-
-	public void setToggleSelect (boolean toggleSelect) {
-		this.toggleSelect = toggleSelect;
-	}
-
 	static public class Node {
-		Actor actor;
+		final Actor actor;
 		Node parent;
 		final Array<Node> children = new Array(0);
 		boolean selectable = true;
@@ -482,7 +462,7 @@ public class Tree extends WidgetGroup {
 				for (int i = 0, n = children.size; i < n; i++)
 					children.get(i).addToTree(tree);
 			} else {
-				for (int i = 0, n = children.size; i < n; i++)
+				for (int i = children.size - 1; i >= 0; i--)
 					children.get(i).removeFromTree(tree);
 			}
 			tree.invalidateHierarchy();
@@ -492,16 +472,18 @@ public class Tree extends WidgetGroup {
 		protected void addToTree (Tree tree) {
 			tree.addActor(actor);
 			if (!expanded) return;
-			for (int i = 0, n = children.size; i < n; i++)
-				children.get(i).addToTree(tree);
+			Object[] children = this.children.items;
+			for (int i = this.children.size - 1; i >= 0; i--)
+				((Node)children[i]).addToTree(tree);
 		}
 
 		/** Called to remove the actor from the tree when the node's parent is collapsed. */
 		protected void removeFromTree (Tree tree) {
 			tree.removeActor(actor);
 			if (!expanded) return;
-			for (int i = 0, n = children.size; i < n; i++)
-				children.get(i).removeFromTree(tree);
+			Object[] children = this.children.items;
+			for (int i = this.children.size - 1; i >= 0; i--)
+				((Node)children[i]).removeFromTree(tree);
 		}
 
 		public void add (Node node) {
@@ -539,8 +521,9 @@ public class Tree extends WidgetGroup {
 		public void removeAll () {
 			Tree tree = getTree();
 			if (tree != null) {
-				for (int i = 0, n = children.size; i < n; i++)
-					children.get(i).removeFromTree(tree);
+				Object[] children = this.children.items;
+				for (int i = this.children.size - 1; i >= 0; i--)
+					((Node)children[i]).removeFromTree(tree);
 			}
 			children.clear();
 		}
@@ -565,10 +548,13 @@ public class Tree extends WidgetGroup {
 			return children;
 		}
 
+		/** Adds the child node actors to the tree again. This is useful after changing the order of {@link #getChildren()}. */
 		public void updateChildren () {
 			if (!expanded) return;
 			Tree tree = getTree();
 			if (tree == null) return;
+			for (int i = children.size - 1; i >= 0; i--)
+				children.get(i).removeFromTree(tree);
 			for (int i = 0, n = children.size; i < n; i++)
 				children.get(i).addToTree(tree);
 		}
@@ -594,6 +580,16 @@ public class Tree extends WidgetGroup {
 
 		public Drawable getIcon () {
 			return icon;
+		}
+
+		public int getLevel () {
+			int level = 0;
+			Node current = this;
+			do {
+				level++;
+				current = current.getParent();
+			} while (current != null);
+			return level;
 		}
 
 		/** Returns this node or the child node with the specified object, or null. */
@@ -644,6 +640,12 @@ public class Tree extends WidgetGroup {
 					node.expandTo();
 				}
 			}
+		}
+
+		/** Returns the height of the node as calculated for layout. A subclass may override and increase the returned height to
+		 * create a blank space in the tree above the node, eg for a separator. */
+		public float getHeight () {
+			return height;
 		}
 	}
 

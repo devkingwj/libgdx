@@ -17,12 +17,11 @@
 package com.badlogic.gdx.scenes.scene2d.ui;
 
 import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.g2d.Batch;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
-import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.scenes.scene2d.ui.Label.LabelStyle;
-import com.badlogic.gdx.scenes.scene2d.utils.Align;
 import com.badlogic.gdx.scenes.scene2d.utils.Drawable;
-import com.esotericsoftware.tablelayout.Cell;
+import com.badlogic.gdx.utils.Align;
 
 /** A button with a child {@link Label} to display text.
  * @author Nathan Sweet */
@@ -47,11 +46,11 @@ public class TextButton extends Button {
 		label = new Label(text, new LabelStyle(style.font, style.fontColor));
 		label.setAlignment(Align.center);
 		add(label).expand().fill();
-		setWidth(getPrefWidth());
-		setHeight(getPrefHeight());
+		setSize(getPrefWidth(), getPrefHeight());
 	}
 
 	public void setStyle (ButtonStyle style) {
+		if (style == null) throw new NullPointerException("style cannot be null");
 		if (!(style instanceof TextButtonStyle)) throw new IllegalArgumentException("style must be a TextButtonStyle.");
 		super.setStyle(style);
 		this.style = (TextButtonStyle)style;
@@ -68,9 +67,9 @@ public class TextButton extends Button {
 		return style;
 	}
 
-	public void draw (SpriteBatch batch, float parentAlpha) {
+	public void draw (Batch batch, float parentAlpha) {
 		Color fontColor;
-		if (isDisabled && style.disabledFontColor != null)
+		if (isDisabled() && style.disabledFontColor != null)
 			fontColor = style.disabledFontColor;
 		else if (isPressed() && style.downFontColor != null)
 			fontColor = style.downFontColor;
@@ -88,7 +87,7 @@ public class TextButton extends Button {
 		return label;
 	}
 
-	public Cell getLabelCell () {
+	public Cell<Label> getLabelCell () {
 		return getCell(label);
 	}
 
@@ -122,7 +121,7 @@ public class TextButton extends Button {
 			if (style.downFontColor != null) this.downFontColor = new Color(style.downFontColor);
 			if (style.overFontColor != null) this.overFontColor = new Color(style.overFontColor);
 			if (style.checkedFontColor != null) this.checkedFontColor = new Color(style.checkedFontColor);
-			if (style.checkedOverFontColor != null) this.checkedFontColor = new Color(style.checkedOverFontColor);
+			if (style.checkedOverFontColor != null) this.checkedOverFontColor = new Color(style.checkedOverFontColor);
 			if (style.disabledFontColor != null) this.disabledFontColor = new Color(style.disabledFontColor);
 		}
 	}

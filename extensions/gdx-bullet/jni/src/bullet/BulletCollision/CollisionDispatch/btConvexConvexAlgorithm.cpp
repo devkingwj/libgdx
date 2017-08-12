@@ -373,7 +373,6 @@ void btConvexConvexAlgorithm ::processCollision (const btCollisionObjectWrapper*
 		input.m_maximumDistanceSquared*= input.m_maximumDistanceSquared;
 	}
 
-	input.m_stackAlloc = dispatchInfo.m_stackAllocator;
 	input.m_transformA = body0Wrap->getWorldTransform();
 	input.m_transformB = body1Wrap->getWorldTransform();
 
@@ -504,9 +503,11 @@ void btConvexConvexAlgorithm ::processCollision (const btCollisionObjectWrapper*
 				
 //				printf("sepNormalWorldSpace=%f,%f,%f\n",sepNormalWorldSpace.getX(),sepNormalWorldSpace.getY(),sepNormalWorldSpace.getZ());
 
+				worldVertsB1.resize(0);
 				btPolyhedralContactClipping::clipHullAgainstHull(sepNormalWorldSpace, *polyhedronA->getConvexPolyhedron(), *polyhedronB->getConvexPolyhedron(),
 					body0Wrap->getWorldTransform(), 
-					body1Wrap->getWorldTransform(), minDist-threshold, threshold, *resultOut);
+																 body1Wrap->getWorldTransform(), minDist-threshold, threshold, worldVertsB1,worldVertsB2,
+																 *resultOut);
  				
 			}
 			if (m_ownManifold)
@@ -569,8 +570,9 @@ void btConvexConvexAlgorithm ::processCollision (const btCollisionObjectWrapper*
 				
 			if (foundSepAxis)
 			{
+				worldVertsB2.resize(0);
 				btPolyhedralContactClipping::clipFaceAgainstHull(sepNormalWorldSpace, *polyhedronA->getConvexPolyhedron(), 
-					body0Wrap->getWorldTransform(), vertices, minDist-threshold, maxDist, *resultOut);
+					body0Wrap->getWorldTransform(), vertices, worldVertsB2,minDist-threshold, maxDist, *resultOut);
 			}
 				
 				
